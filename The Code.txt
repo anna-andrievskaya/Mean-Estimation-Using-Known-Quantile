@@ -1,0 +1,445 @@
+﻿s# The project is aimed on investigating the behaviour of
+# a) mean estimators using additional data - prior information about quantile of a distribution
+# b) means estimators build on censored data
+
+# We suppose that we are given a pair (Xq, q) such that for c.d.f. F(Xq) = q
+# So, we call this additional information about quantile
+# Then, for given sample X we are given vector I such that Ij = 1 if Xj was censored
+# Such a pair (X, I) is called censored sample 
+
+# The problem arouses from the need to
+# a) construct mathematical expectation estimator accounting for quantile information
+# b) construct mean estimator which works on censored sample, moreover, which accounts for (Xq, q) information
+# So, we need to be assured how these new estimators behave in terms of variance and, 
+# moreover, mean squared error (MSE)
+#
+# We investigate into these problem in a two ways:
+# first, we uncover the dependence of the MSEs of the estimators from sample size N;
+# second, the dependence between MSEs and the level of quantile was under study
+#
+# Literature
+# Jager, K. J., Van Dijk, P. C., Zoccali, C., & Dekker, F. W. (2008). The analysis of survival data: 
+# the Kaplan–Meier method. Kidney international, 74(5), 560-565. 
+# 
+# Zenkova, Z., Andrievskaya, A., & Tarima, S. (2022, June). Accounting for deficit and a known 
+# demand quantile in ABC-XYZ analysis. In 2022 IEEE 6th International Conference on Logistics Operations 
+# Management (GOL) (pp. 1-7). IEEE.
+# 
+# Korolyuk, V. S., & Borovskich, Y. V. (2013). Theory of U-statistics (Vol. 273). Springer Science & Business Media.
+#
+# Author: AA, mail:anna_andriev@mail.ru or telegram:@anya_andriev.
+# (C) 2022
+    
+library(ggplot2)    
+
+
+# Pugachev Mean Estimator
+
+MeanQest <- function(X, Xq, q)
+{
+    # X: sample
+    # Xq: quantile
+    # q: level of qunatile
+    
+    X <- sort(X);
+    N <- length(X);
+    Fnq <- c(0);        
+    Fnxq_heat <- sum(X < Xq) / N;
+    for (i in seq(1, N))
+    {
+        if (X[i] < Xq)
+        {
+            Fnq <- c(Fnq, q * i / N / Fnxq_heat);
+        }            
+        else
+        {
+            Fnq <- c(Fnq, q + (1 - q) * (i/N - Fnxq_heat) / (1 - Fnxq_heat))
+        }
+        #+ (1 - q) * (i / N - Fnxq_heat) / (1 - Fnxq_heat));
+    }
+    res <- 0;    
+    for (i in seq(2, N + 1))
+    {
+        res <- res + (Fnq[i] - Fnq[i - 1]) * X[i - 1];
+    }
+    MeanQest <- res;
+}
+
+# Kullback-Leibner projection mean estimator
+Xq2est <- function(X, Xq, q)
+{
+    # X: sample
+    # Xq: quantile
+    # q: level of quantile
+    
+    X <- sort(X);
+    Xq2 = 0;
+    z1 = 0; z2 = 0;
+    r = sum(X <= Xq);
+    N <- length(X);
+    if ((r == 0) || (r == N))
+    {
+        Xq2 = mean(X);
+    }
+    else
+    {
+        for (i in seq(1, N))
+        {
+            if (X[i] <= Xq)
+            {
+                z1 = z1 + X[i];
+            }
+            if (X[i] > Xq)
+            {
+                z2 = z2 + X[i];
+            }        
+        }    
+        z1 = z1 * q / r;
+        z2 = z2 * (1 - q) / (N - r);
+        Xq2 = z1 + z2;
+    }
+    Xq2est = Xq2;
+}
+
+# Kaplan-Meier Mean Estimator
+KMmeanest <- function(X, I)
+{
+    # X: sample
+    # I: indicators whether i-th elements was censored or wasn`t
+    
+    N <- length(X);
+    Snc <- 1;
+    SNC <- 1;
+    for (i in seq(1, N))
+    {
+        Snc <- Snc * ((N - i) / (N - i + 1)) ^ (1 - I[i]);
+        SNC <- c(SNC, Snc);        
+    }
+    h <- rep(0, N);        
+    SNC[1] <- SNC[2];
+    for (i in seq(1, N))
+    {
+        h[i] <- SNC[i] - SNC[i + 1];
+    }        
+    
+    Xc <- 0;
+    for (i in seq(1, N))
+    {
+        Xc <- Xc + X[i] * (1 - I[i]) * h[i];
+    }
+    KMmeanest <- Xc;
+}
+
+# Kaplan-Meier Mean Estimator which uses additional quantile information
+KMQmeanest <- function(X, I, Xq, q)
+{        
+    # X: sample
+    # I: indicators whether i-th elements was censored or wasn`t
+    # Xq: qunatile
+    # q: level of quantile
+        
+    X <- sort(X);
+    N <- length(X);                
+    Snc <- 1;
+    SNC <- 1;
+    for (i in seq(1, N))
+    {
+        Snc <- Snc * ((N - i) / (N - i + 1)) ^ (1 - I[i]);
+        SNC <- c(SNC, Snc);        
+    }        
+    Fnkm <- 1 - SNC;        
+    l <- length(X[X < Xq]) + 2;                     
+    Fnxq_heat <- Fnkm[l];        
+    FnkmQ <- c(0);                
+    for (i in seq(2, N + 1))
+    {
+        if (X[i - 1] < Xq)
+        {
+            FnkmQ <- c(FnkmQ, q * Fnkm[i] / Fnxq_heat);
+        }            
+        else
+        {
+            FnkmQ <- c(FnkmQ, q + (1 - q) * (Fnkm[i] - Fnxq_heat) / (1 - Fnxq_heat))
+        }
+    }
+    res <- 0;
+    for (i in seq(2, N + 1))
+    {
+        res <- res + (FnkmQ[i] - FnkmQ[i - 1]) * X[i - 1];
+    }
+    KMQmeanest <- res;
+}
+
+# Pugachev mean estimator
+Xq1est <- function(X, Xq, q)
+{
+    # X: sample
+    # Xq: quantile
+    # q: level of quantile
+    
+    N <- length(X);
+    res <- 0;
+    for (i in seq(1, N))
+    {
+        for (j in seq(1, N))
+            if (i != j)
+            {
+                res = res + X[i] * (1 - ((X[i] <= Xq) - q) * ((X[j] <= Xq) - q) / q / (1 - q));
+            }
+        
+    }
+    Xq1est <- res / N / (N - 1);
+}
+        
+# Quantile level
+q = 0.6;
+# Number of samples for each N
+M <- 50000;
+# Part of censoring data
+Q <- 0.25;
+# Interval of N
+n1 <- 10; n2 <- 150;
+# Observation coefficient
+OC <- 0.75;
+
+# True mean
+m = 0.5  
+Xq <- qunif(q)        
+
+# We need many to keep all the resuls of the simulations
+
+# Sample mean
+Xmean_MSE <- c();
+XmeanQ_MSE <- c();
+Xmean_Var <- c();
+XmeanQ_Var <- c();
+Xmean_Avg <- c();
+XmeanQ_Avg <- c();
+
+# Kaplan-Meier
+KMmean_MSE <- c();
+KMmeanQ_MSE <- c();    
+KMmean_Var <- c();
+KMmeanQ_Var <- c();
+KMmean_Avg <- c();
+KMmeanQ_Avg <- c();
+# Kullback-Leibner 
+Xq2_MSE <- c();
+Xq2Obs_MSE <- c();
+Xq2_Var <- c();
+Xq2Obs_Var <- c();
+Xq2_Avg <- c();
+Xq2Obs_Avg <- c();
+# Pugachev 
+Xq1_MSE <- c();
+Xq1_Var <- c();
+Xq1_Avg <- c();
+
+# Simulation
+for (N in seq(n1, n2))
+{                                
+    Xmean <- c();
+    XmeanQ <- c(1);
+    XmeanObs <- c(1);
+    XmeanQObs <- c(1);
+    KMmean <- c(1);
+    KMmeanQ <- c(1);
+    Xq2 <- c();        
+    Xq1 <- c();
+    
+    
+    for (j in seq(1, M))
+    {                        
+        # Uniform            
+        X <- sort(runif(N, 0, 1));
+        
+        # Censoring indicators forming            
+        I <- rep(0, N);
+        I[sample(seq(1, N), Q * N)] <- 1;
+        KMQ <- KMQmeanest(X, I, Xq, q);
+        while (is.na(KMQ))
+        {
+            X <- runif(N, 0, 1);
+            I <- rep(0, N);
+            I[sample(seq(1, N), Q * N)] <- 1;
+            KMQ <- KMQmeanest(X, I, Xq, q);
+        }
+        
+        # Forming observed values
+        Z <- X;            
+        Z[I == 1] <- X[I == 1] * OC;
+        Z <- sort(Z);
+        
+        Xmean <- c(Xmean, mean(X));
+        XmeanQ <- c(XmeanQ, MeanQest(X, Xq, q));
+        XmeanObs <- c(XmeanObs, mean(Z));
+        XmeanQObs <- c(XmeanQObs, MeanQest(Z, Xq, q));
+        KMmean <- c(KMmean, KMmeanest(X, I));            
+        KMmeanQ <- c(KMmeanQ, KMQmeanest(X, I, Xq, q));            
+        Xq2 <- c(Xq2, Xq2est(X, Xq, q));            
+        Xq1 <- c(Xq1, Xq1est(X, Xq, q));            
+    }                
+    Xmean_MSE <- c(Xmean_MSE,  N * mean((Xmean - m) ^ 2));        
+    XmeanQ_MSE <- c(XmeanQ_MSE, N * mean((XmeanQ - m) ^ 2));        
+    KMmean_MSE <- c(KMmean_MSE, N * mean((KMmean - m) ^ 2));
+    KMmeanQ_MSE <- c(KMmeanQ_MSE, N * mean((KMmeanQ - m) ^ 2));
+    Xq2_MSE <-  c(Xq2_MSE, N * mean((Xq2 - m) ^ 2));        
+    Xq1_MSE <-  c(Xq1_MSE, N * mean((Xq1 - m) ^ 2));        
+            
+    Xmean_Var <- c(Xmean_Var, var(Xmean));
+    XmeanQ_Var <- c(XmeanQ_Var, var(XmeanQ));
+    KMmean_Var <- c(KMmean_Var, var(KMmean));
+    KMmeanQ_Var <- c(KMmeanQ_Var, var(KMmeanQ));
+    Xq2_Var <- c(Xq2_Var, var(Xq2));
+    Xq1_Var <- c(Xq1_Var, var(Xq1));        
+    
+    Xmean_Avg <- c(Xmean_Avg, mean(Xmean));
+    XmeanQ_Avg <- c(XmeanQ_Avg, mean(XmeanQ));        
+    KMmean_Avg <- c(KMmean_Avg, mean(KMmean));
+    KMmeanQ_Avg <- c(KMmeanQ_Avg, mean(KMmeanQ));
+    Xq2_Avg <- c(Xq2_Avg, mean(Xq2));
+    Xq1_Avg <- c(Xq1_Avg, mean(Xq1));
+    
+    print(paste("Progress", N, "of", n2))
+}    
+
+# The dependence of MSE/Avg from quantile level from eps to 1 - eps
+N = 30    
+h = 0.01
+M = 10000
+for (q in seq(h, 1 - h, by = h))
+{                
+    Xq <- qunif(q, 0, 1);                
+    Xmean <- c();
+    Xq2 <- c();
+    Xq1 <- c();
+    for (j in seq(1, M))
+    {
+        X = runif(N, 0, 1);            
+        Xmean = c(Xmean, mean(X));
+        Xq1 = c(Xq1, Xq1est(X, Xq, q));
+        Xq2 = c(Xq2, Xq2est(X, Xq, q));
+    }
+    
+    
+    Xmean_Avg = c(Xmean_Avg, mean(Xmean));
+    Xq1_Avg = c(Xq1_Avg, mean(Xq1));
+    Xq2_Avg = c(Xq2_Avg, mean(Xq2));
+    
+    
+    Xmean_Var = c(Xmean_Var, var(Xmean));
+    Xq1_Var = c(Xq1_Var, var(Xq1));
+    Xq2_Var = c(Xq2_Var, var(Xq2));
+    
+    Xmean_MSE = c(Xmean_MSE, mean((Xmean - m)^2));
+    Xq1_MSE = c(Xq1_MSE, mean((Xq1 - m)^2));
+    Xq2_MSE = c(Xq2_MSE, mean((Xq2 - m)^2));
+    
+    print(paste(q / h , "th of", 1 / h - 1))
+}
+
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE, col = "Xmean`s N * MSE")) +
+    geom_line(aes(seq(n1, n2), Xq2_MSE, col = "Xq2`s N * MSE")) +               
+    geom_line(aes(seq(n1, n2), KMmean_MSE, col = paste("KMmean`s N * MSE","; Part of censoring = ", Q, sep = ""))) +
+    xlab("N") + ylab("N * MSE")
+
+ggplot() + geom_line(aes(seq(5, 500), KMmean_MSE, col = "KMmean`s N * MSE")) +
+    xlab("N") + ylab("N * MSE")
+
+ggplot() + geom_line(aes(seq(5, 500), Xmean_MSE, col = "Xmean`s N * MSE")) +
+    geom_line(aes(seq(5, 500), Xq2_MSE, col = "Xq2`s N * MSE")) +                   
+    xlab("N") + ylab("N * MSE")
+
+
+ggplot() + geom_line(aes(seq(n1, n2), KM_new, col = "KM NEW")) +               
+    geom_line(aes(seq(n1, n2), Xmean_MSE, col = "Xmean_MSE")) +               
+    geom_line(aes(seq(n1, n2), KMmean_MSE, col = "Standart KM")) +
+    xlab("N") + ylab("MSE") + ggtitle("N * MSE of KM and modified KM")
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE, col = "KM NEW")) +               
+    geom_line(aes(seq(n1, n2), KM_q_new, col = "KM with Quantile NEW")) +               
+    geom_line(aes(seq(n1, n2), KMmeanQ_MSE, col = "Standart KM with Quantile")) +
+    xlab("N") + ylab("MSE") + 
+    ggtitle("N * MSE of KM with Quantile and modified KM with Quantile")
+
+
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE, col = "Mean")) +
+    geom_line(aes(seq(n1, n2), XmeanQ_MSE, col = "Mean with Known Qantile")) +               
+    geom_line(aes(seq(n1, n2), KMmean_MSE, col = paste("Kaplan-Mayer Estimate","; Part of censoring = ", Q, sep = ""))) +
+    geom_line(aes(seq(n1, n2), KMmeanQ_MSE, col = paste("Kaplan-Mayer Estimate with Known Quantile","; Part of censoring = ", Q, sep = ""))) +
+    xlab("N") + ylab("MSE") + ggtitle("MSEs of Estimates")
+
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_Avg, col = "Mean")) +
+    geom_line(aes(seq(n1, n2), Xq1_Avg, col = "Mean with Known Qantile")) +               
+    geom_line(aes(seq(n1, n2), KMmean_Avg, col = paste("Kaplan-Mayer Estimate","; Part of censoring = ", Q, sep = ""))) +
+    geom_line(aes(seq(n1, n2), KMmeanQ_Avg, col = paste("Kaplan-Mayer Estimate with Known Quantile","; Part of censoring = ", Q, sep = ""))) +
+    geom_line(aes(seq(n1, n2), rep(m, n2 - n1 + 1), col = "True Mean")) + 
+    xlab("N") + ylab("Average") + ggtitle("Average Values of Estimates")
+
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE, col = "Mean")) +
+    geom_line(aes(seq(n1, n2), XmeanQ_MSE, col = "Mean with Known Qantile")) +               
+    geom_line(aes(seq(n1, n2), KMmean_MSE, col = paste("Kaplan-Mayer Estimate","; Part of censoring = ", Q, sep = ""))) +
+    geom_line(aes(seq(n1, n2), KMmeanQ_MSE, col = paste("Kaplan-Mayer Estimate with Known Quantile","; Part of censoring = ", Q, sep = ""))) +
+    xlab("N") + ylab("N * MSE") + ggtitle("N * MSEs of Estimates")
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_Avg, col = "Sample Mean")) +                
+    geom_line(aes(seq(n1, n2), Xq1_Avg, col = "Pugachev Estimator")) + 
+    geom_line(aes(seq(n1, n2), Xq2_Avg, col = "Kullback-Leibner Estimator")) +
+    geom_line(aes(seq(n1, n2), rep(m, n2 - n1 + 1), col = "True Mean")) + 
+    xlab("N") + ylab("Average") + ggtitle("Average Values of Estimators")
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE / seq(n1, n2), col = "Mean")) +
+    geom_line(aes(seq(n1, n2), Xq1_MSE / seq(n1, n2), col = paste("Pugachev Estimator"))) +
+    geom_line(aes(seq(n1, n2), Xq2_MSE / seq(n1, n2), col = paste("Kullback-Leibler Estimator"))) +
+    xlab("N") + ylab("MSE") + ggtitle("MSEs of Estimates") + theme_bw()
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE, col = "Mean")) +
+    geom_line(aes(seq(n1, n2), Xq1_MSE, col = paste("Pugachev Estimator"))) +
+    geom_line(aes(seq(n1, n2), Xq2_MSE, col = paste("Kullback-Leibner Estimator"))) +
+    xlab("N") + ylab("N * MSE") + ggtitle("N * MSEs of Estimates")
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_Var, col = "Mean")) +
+    geom_line(aes(seq(n1, n2), Xq1_Var, col = paste("Pugachev Estimator"))) +
+    geom_line(aes(seq(n1, n2), Xq2_Var, col = paste("Kullback-Leibner Estimator"))) +
+    xlab("N") + ylab("Variance") + ggtitle("Variance of Estimates") + theme_bw()
+
+ggplot() + geom_line(aes(seq(n1, n2), Xmean_MSE, col = "Mean")) +
+    geom_line(aes(seq(n1, n2), XmeanQ_MSE, col = paste("Pugachev Estimator"))) +    
+    xlab("N") + ylab("N * MSE") + ggtitle("N * MSEs of Estimates")
+
+
+
+###   BY QUANTILE LEVEL
+
+ggplot() + geom_line(aes(seq(h, 1 - h, by = h), rep(m, length(Xq1_Avg)), col = "True Mean")) + 
+    geom_line(aes(seq(h, 1 - h, by = h), Xq1_Avg, col = paste("Pugachev Estimator"))) +    
+    geom_line(aes(seq(h, 1 - h, by = h), Xq2_Avg, col = paste("Kullback-Leibner Estimator"))) +    
+    xlab("q") + ylab("Average") + ggtitle("Averages of Estimates")
+
+
+ggplot() + geom_line(aes(seq(h, 1 - h, by = h), rep(1, length(Xq1_MSE)), col = "Theoretical Variance")) + 
+    geom_line(aes(seq(h, 1 - h, by = h), N * Xq1_MSE, col = paste("Pugachev Estimator"))) +    
+    geom_line(aes(seq(h, 1 - h, by = h), N * Xq2_MSE, col = paste("Kullback-Leibner Estimator"))) +    
+    xlab("q") + ylab("N * MSE") + ggtitle("N * MSEs of Estimates")
+
+
+
+ggplot() + geom_line(aes(seq(h, 1 - h, by = h), Xq2_Avg_T, color = " Theoretical Average")) +    
+    geom_line(aes(seq(h, 1 - h, by = h), Xq2_Avg, color = "Empirical Average")) +                       
+    xlab("Level of Quantile") + ylab("Average") + theme_bw() + 
+    ggtitle("Theoretical and Empirical Averages of Projection Mean Estimator",
+            subtitle = "Exponential Distribution") 
+
+
+ggplot() + geom_line(aes(seq(h, 1 - h, by = h), Xq2_MSE_T, color = " Theoretical N*MSE")) +    
+    geom_line(aes(seq(h, 1 - h, by = h), N * Xq2_MSE, color = "Empirical N*MSE")) +                                          
+    xlab("Level of Quantile") + ylab("N * MSE") + theme_bw() + 
+    ggtitle("Theoretical and Empirical N * MSEs of Kullback-Leibler Projection Mean Estimator",
+            subtitle = "Exponential") 
+
+
+
